@@ -31,8 +31,25 @@ define(['N/https', 'N/record', 'N/search'],
 
         'use strict'
 
-        const SHOPIFY_API_KEY = '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';
         const SHOPIFY_STORE_DOMAIN = 'isf3d1-xe';
+
+        /**
+         * Retrieve the Shopify API key from script parameters
+         * @returns {string} - Shopify API key from the script parameters
+        */
+        const getShopifyApiKey = () => {
+            try {
+                let scriptObj = runtime.getCurrentScript();
+                return scriptObj.getParameter({
+                    name: 'custscript_jj_shopify_api_tkn_otp9653' // This is the parameter ID you set in the script record
+                });
+            } catch (error) {
+                log.error("error in fetching shopify api key");
+                return '';
+            }
+        };
+
+        let shopifyApiKey = getShopifyApiKey();
 
         /**
          * This function gets the corresponding Shopify Order ID from a custom field.
@@ -144,7 +161,7 @@ define(['N/https', 'N/record', 'N/search'],
                     url: url,
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-Shopify-Access-Token': SHOPIFY_API_KEY
+                        'X-Shopify-Access-Token': shopifyApiKey
                     }
                 });
                 let orderData = JSON.parse(response.body);
@@ -193,7 +210,7 @@ define(['N/https', 'N/record', 'N/search'],
                     url: url,
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-Shopify-Access-Token': SHOPIFY_API_KEY
+                        'X-Shopify-Access-Token': shopifyApiKey
                     },
                     body: JSON.stringify({ query: requestData })
                 });
@@ -263,7 +280,7 @@ define(['N/https', 'N/record', 'N/search'],
                     url: `https://${SHOPIFY_STORE_DOMAIN}.myshopify.com/admin/api/2025-10/graphql.json`,
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-Shopify-Access-Token': SHOPIFY_API_KEY
+                        'X-Shopify-Access-Token': shopifyApiKey
                     },
                     body: JSON.stringify({ query: requestData })
                 });
