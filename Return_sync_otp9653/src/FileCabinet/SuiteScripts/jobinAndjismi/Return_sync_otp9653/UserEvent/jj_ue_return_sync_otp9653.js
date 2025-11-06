@@ -2,13 +2,13 @@
  * @NApiVersion 2.1
  * @NScriptType UserEventScript
  */
-/**********************************************************************************************************************************************
+/**************************************************************************************************************************************
 * Training
 * 
 * ${OTP} : ${Onboard Training Program}
 *
 * 
-***********************************************************************************************************************************************
+*************************************************************************************************************************************
 *
 * Author: Jobin & Jismi
 *
@@ -20,8 +20,7 @@
 *
 * @version 1.0 OTP-9653 : 03-November-2025 : Created the initial build by JJ0363
 *
-*
-**************************************************************************************************************************************************/
+*************************************************************************************************************************************/
 define(['N/https', 'N/record', 'N/search'],
     /**
      * @param{https} https
@@ -38,7 +37,7 @@ define(['N/https', 'N/record', 'N/search'],
         /**
          * This function gets the corresponding Shopify Order ID from a custom field.
          * @param {string} netsuiteOrderId - The NetSuite order ID to look up in the custom record.
-         * @returns {string|null} - The Shopify Order ID or null if not found.
+         * @returns {string} - The Shopify Order ID or null if not found.
         */
         const shopifyOrderIdSearch = (netsuiteOrderId) => {
             try {
@@ -53,17 +52,18 @@ define(['N/https', 'N/record', 'N/search'],
                 if (result.length > 0) {
                     return result[0].getValue('custrecord125');
                 }
-                return null;
+                return '';
             } catch (error) {
                 log.error("error in searching custom record", error);
+                return '';
             }
         }
 
         /**
          * This function fetches the Shopify Order ID based on the `createdfrom` field.
          * @param {Record} currentRecord - The current NetSuite record from which we need to extract the Shopify Order ID.
-         * @returns {string|null} - The Shopify Order ID or null if not found.
-         */
+         * @returns {string} - The Shopify Order ID or null if not found.
+        */
         const getShopifyOrderId = (currentRecord) => {
             try {
                 let createdFromId = currentRecord.getValue('createdfrom');
@@ -100,7 +100,7 @@ define(['N/https', 'N/record', 'N/search'],
                 return shopifyOrderId;
             } catch (error) {
                 log.error("error in fetching shopify order id");
-                return null;
+                return '';
             }
         }
 
@@ -203,6 +203,7 @@ define(['N/https', 'N/record', 'N/search'],
                 return responseData;
             } catch (error) {
                 log.error("error in fulfillment item ids:", error);
+                return {};
             }
         }
 
@@ -239,7 +240,6 @@ define(['N/https', 'N/record', 'N/search'],
                         }
                     }`;
                 }).join(',');
-
                 log.debug("return line items: ", returnLineItems);
                 let requestData = `mutation ReturnRequestMutation {
                     returnRequest(
