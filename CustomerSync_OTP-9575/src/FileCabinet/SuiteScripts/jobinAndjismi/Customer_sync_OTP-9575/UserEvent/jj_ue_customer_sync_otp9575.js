@@ -7,7 +7,6 @@
 * 
 * ${OTP} : ${Onboard Training Program}
 *
-* 
 **********************************************************************************************************************************
 *
 * Author: Jobin & Jismi
@@ -20,46 +19,30 @@
 *
 * @version 1.0 OTP-9575 : 30-October-2025 : Created the initial build by JJ0363
 *
-*
 *********************************************************************************************************************************/
-define(['N/https', 'N/record', 'N/search'],
+define(['N/https', 'N/record', 'N/search', '../Library/jj_netsuite_shopify_integration_library.js'],
     /**
  * @param{https} https
  * @param{record} record
  * @param{search} search
  */
-    (https, record, search) => {
+    (https, record, search, library) => {
 
         'use strict'
 
-        const SHOPIFY_API_KEY = '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';
         const SHOPIFY_STORE_DOMAIN = 'isf3d1-xe';
 
         /**
-         * This function checks if the customer already exists in Shopify by matching the email.
-         * @param {string} email - The email address of the customer to search for in Shopify.
-         * @returns {number|null} - Shopify customer ID if found, null if not found.
-         */
-        const getShopifyCustomerId = (email) => {
-            try {
-                let response = https.get({
-                    url: `https://${SHOPIFY_STORE_DOMAIN}.myshopify.com/admin/api/2023-01/customers/search.json?email=${email}`,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Shopify-Access-Token': SHOPIFY_API_KEY
-                    }
-                });
-                let responseData = JSON.parse(response.body);
-                log.error("shopify res: ",responseData);
-                if (responseData.customers && responseData.customers.length > 0) {
-                    return responseData.customers[0].id;
-                }
-                return NaN;
-            } catch (error) {
-                log.error("error in fetching shopify customers: ",error)
-                return NaN;
-            }
-        }
+         * Retrieve the Shopify API key from script parameters
+         * @returns {string} - Shopify API key from the script parameters
+        */
+        const getShopifyApiKey = () => {
+            let scriptObj = runtime.getCurrentScript();
+            return scriptObj.getParameter({
+                name: 'custscript_shopify_api_token' // This is the parameter ID you set in the script record
+            });
+        };
+
         /**
          * Defines the function definition that is executed after record is submitted.
          * @param {Object} scriptContext
@@ -81,7 +64,7 @@ define(['N/https', 'N/record', 'N/search'],
                 let customerState = customerRecord.getValue('state') || '';
                 let customerZip = customerRecord.getValue('zipcode') || '';
                 let customerCountry = customerRecord.getValue('country') || '';
-                let shopifyCustomerId = getShopifyCustomerId(customerEmail);
+                let shopifyCustomerId = library.getShopifyCustomerId(customerEmail);
                 log.error("customer email: ",customerEmail);
                 log.error("shopify customer id: ",shopifyCustomerId);
                 let shopifyCustomerData = {
@@ -106,7 +89,7 @@ define(['N/https', 'N/record', 'N/search'],
                         let updateResponse = https.put({
                             url: `https://${SHOPIFY_STORE_DOMAIN}.myshopify.com/admin/api/2023-01/customers/${shopifyCustomerId}.json`,
                             headers: {
-                                'X-Shopify-Access-Token': SHOPIFY_API_KEY,
+                                'X-Shopify-Access-Token': getShopifyApiKey(),
                                 'Content-Type': 'application/json'
                             },
                             body: JSON.stringify(shopifyCustomerData)
@@ -123,7 +106,7 @@ define(['N/https', 'N/record', 'N/search'],
                         let createResponse = https.post({
                             url: `https://${SHOPIFY_STORE_DOMAIN}.myshopify.com/admin/api/2023-01/customers.json`,
                             headers: {
-                                'X-Shopify-Access-Token': SHOPIFY_API_KEY,
+                                'X-Shopify-Access-Token': getShopifyApiKey(),
                                 'Content-Type': 'application/json'
                             },
                             body: JSON.stringify(shopifyCustomerData)

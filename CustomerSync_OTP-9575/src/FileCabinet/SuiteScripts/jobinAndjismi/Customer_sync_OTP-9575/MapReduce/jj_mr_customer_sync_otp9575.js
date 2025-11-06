@@ -1,7 +1,7 @@
 /**
  * @NApiVersion 2.1
  * @NScriptType MapReduceScript
- */
+*/
 /**********************************************************************************************************************************
 * Training
 * 
@@ -19,81 +19,26 @@
 *
 * @version 1.0 OTP-9575 : 30-October-2025 : Created the initial build by JJ0363
 *
-*
 *********************************************************************************************************************************/
-define(['N/https', 'N/record', 'N/search'],
+define(['N/https', 'N/record', 'N/search', '../Library/jj_netsuite_shopify_integration_library.js'],
     /**
      * @param{https} https
      * @param{record} record
      * @param{search} search
+     * @param{library} library
      */
-    (https, record, search) => {
+    (https, record, search, library) => {
 
         'use strict'
 
-        const SHOPIFY_API_KEY = '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';
-        const SHOPIFY_STORE_DOMAIN = 'isf3d1-xe';
-
-        /**
-         * Fetch customers from Shopify.
-         * @returns {Array} - List of customers fetched from Shopify.
-         */
-        const customersFromShopify = () => {
-            try {
-                let response = https.get({
-                    url: `https://${SHOPIFY_STORE_DOMAIN}.myshopify.com/admin/api/2023-01/customers.json`,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Shopify-Access-Token': SHOPIFY_API_KEY
-                    }
-                });
-                let shopifyCustomers = JSON.parse(response.body).customers || [];
-                log.error("shopify customers: ", shopifyCustomers);
-                return shopifyCustomers;
-            } catch (error) {
-                log.error("Error fetching Shopify customers", error);
-                return [];
-            }
-        }
-
-        /**
-         * Fetch active customers from NetSuite.
-         * @returns {Array} - List of active customers in NetSuite.
-         */
-        const netSuiteCustomers = () => {
-            try {
-                let customerSearch = search.create({
-                    type: search.Type.CUSTOMER,
-                    filters: [['isinactive', 'is', 'F']],
-                    columns: ['internalid', 'entityid', 'email', 'phone', 'address', 'city', 'state', 'zipcode', 'country']
-                });
-                let searchResult = [];
-                customerSearch.run().each(function(result) {
-                    searchResult.push({
-                        internalId: result.getValue('internalid'),
-                        name: result.getValue('entityid'),
-                        email: result.getValue('email'),
-                        phone: result.getValue('phone'),
-                        address: result.getValue('address'),
-                        city: result.getValue('city'),
-                        state: result.getValue('state'),
-                        zip: result.getValue('zipcode'),
-                        country: result.getValue('country')
-                    });
-                    return true;
-                });
-                return searchResult;
-            } catch (error) {
-                log.error("Error fetching NetSuite customers", error);
-                return [];
-            }
-        }
+        let customersFromShopify = library.customersFromShopify();
+        let netSuiteCustomers = library.netSuiteCustomers();
 
         /**
          * Find an existing customer in NetSuite by email.
          * @param {string} email - Customer's email address to search for in NetSuite.
-         * @returns {Object|null} - Customer record object if found, otherwise null.
-         */
+         * @returns {Object} - Customer record object if found, otherwise null.
+        */
         const findExistingCustomerInNetSuite = (email) => {
             try {
                 let customerSearch = search.create({
@@ -203,11 +148,11 @@ define(['N/https', 'N/record', 'N/search'],
          */
         const getInputData = (inputContext) => {
             try {
-                let shopifyCustomers = customersFromShopify();
-                let netSuiteCustomersData = netSuiteCustomers();
+                // let shopifyCustomers = customersFromShopify();
+                // let netSuiteCustomersData = netSuiteCustomers();
                 let customerData = [];
-                shopifyCustomers.forEach(shopifyCustomer => {
-                    let existingCustomer = netSuiteCustomersData.find(netsuiteCustomer => netsuiteCustomer.email === shopifyCustomer.email);
+                customersFromShopify.forEach(shopifyCustomer => {
+                    let existingCustomer = netSuiteCustomers.find(netsuiteCustomer => netsuiteCustomer.email === shopifyCustomer.email);
                     if (existingCustomer) {
                         customerData.push({
                             action: 'update',
