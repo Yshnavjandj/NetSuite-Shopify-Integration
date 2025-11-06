@@ -40,7 +40,7 @@ define(['N/https', 'N/record', 'N/search'],
            try {
                 let scriptObj = runtime.getCurrentScript();
                 return scriptObj.getParameter({
-                    name: 'custscript_shopify_api_token'
+                    name: 'custscript_jj_shopify_api_tkn_opt9650'
                 });
            } catch (error) {
                 log.error("error in fetching shopify api token",error);
