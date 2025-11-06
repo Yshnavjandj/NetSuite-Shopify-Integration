@@ -11,13 +11,13 @@
 *
 * Author: Jobin & Jismi
 *
-* Date Created : 30-October-2025
+* Date Created : 27-October-2025
 *
 * Description : This map reduce script is used to sync orders from shopify to NetSuite
 *
 * REVISION HISTORY
 *
-* @version 1.0 OTP-9572 : 30-October-2025 : Created the initial build by JJ0363
+* @version 1.0 OTP-9572 : 27-October-2025 : Created the initial build by JJ0363
 *
 *********************************************************************************************************************************/
 define(['N/https', 'N/record', 'N/search'],
