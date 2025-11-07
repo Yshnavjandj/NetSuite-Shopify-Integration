@@ -20,13 +20,14 @@
 * @version 1.0 OTP-9575 : 30-October-2025 : Created the initial build by JJ0363
 *
 *********************************************************************************************************************************/
-define(['N/https', 'N/record', 'N/search', '../Library/jj_netsuite_shopify_integration_library.js'],
+define(['N/https', 'N/record', 'N/search', '../Library/jj_netsuite_shopify_integration_library.js','N/runtime'],
     /**
  * @param{https} https
  * @param{record} record
  * @param{search} search
+ * @param{search} runtime
  */
-    (https, record, search, library) => {
+    (https, record, search, library, runtime) => {
 
         'use strict'
 
@@ -37,10 +38,15 @@ define(['N/https', 'N/record', 'N/search', '../Library/jj_netsuite_shopify_integ
          * @returns {string} - Shopify API key from the script parameters
         */
         const getShopifyApiKey = () => {
-            let scriptObj = runtime.getCurrentScript();
-            return scriptObj.getParameter({
-                name: 'custscript_shopify_api_token' // This is the parameter ID you set in the script record
-            });
+            try {
+                let scriptObj = runtime.getCurrentScript();
+                return scriptObj.getParameter({
+                    name: 'custscript_jj_shopify_api_token' // This is the parameter ID you set in the script record
+                });
+            } catch (error) {
+                log.error("error in fetching shopify api key");
+                return '';
+            }
         };
 
         /**
@@ -64,7 +70,8 @@ define(['N/https', 'N/record', 'N/search', '../Library/jj_netsuite_shopify_integ
                 let customerState = customerRecord.getValue('state') || '';
                 let customerZip = customerRecord.getValue('zipcode') || '';
                 let customerCountry = customerRecord.getValue('country') || '';
-                let shopifyCustomerId = library.getShopifyCustomerId(customerEmail);
+                let shopifyApiKey = getShopifyApiKey();
+                let shopifyCustomerId = library.getShopifyCustomerId(customerEmail,shopifyApiKey);
                 log.error("customer email: ",customerEmail);
                 log.error("shopify customer id: ",shopifyCustomerId);
                 let shopifyCustomerData = {
@@ -89,7 +96,7 @@ define(['N/https', 'N/record', 'N/search', '../Library/jj_netsuite_shopify_integ
                         let updateResponse = https.put({
                             url: `https://${SHOPIFY_STORE_DOMAIN}.myshopify.com/admin/api/2023-01/customers/${shopifyCustomerId}.json`,
                             headers: {
-                                'X-Shopify-Access-Token': getShopifyApiKey(),
+                                'X-Shopify-Access-Token': shopifyApiKey,
                                 'Content-Type': 'application/json'
                             },
                             body: JSON.stringify(shopifyCustomerData)
@@ -106,7 +113,7 @@ define(['N/https', 'N/record', 'N/search', '../Library/jj_netsuite_shopify_integ
                         let createResponse = https.post({
                             url: `https://${SHOPIFY_STORE_DOMAIN}.myshopify.com/admin/api/2023-01/customers.json`,
                             headers: {
-                                'X-Shopify-Access-Token': getShopifyApiKey(),
+                                'X-Shopify-Access-Token': shopifyApiKey,
                                 'Content-Type': 'application/json'
                             },
                             body: JSON.stringify(shopifyCustomerData)
@@ -119,9 +126,16 @@ define(['N/https', 'N/record', 'N/search', '../Library/jj_netsuite_shopify_integ
                 }
             } catch (error) {
                 log.error("error in aftersubmit: ",error);
+                record.submitFields({
+                    type: record.Type.CUSTOMER,
+                    id: scriptContext.newRecord.id,
+                    values: {
+                        'custentity_jj_failure_reason_customer': error.message
+                    }
+                });
             }
         }
 
-        return {afterSubmit}
+        return { afterSubmit }
 
     });

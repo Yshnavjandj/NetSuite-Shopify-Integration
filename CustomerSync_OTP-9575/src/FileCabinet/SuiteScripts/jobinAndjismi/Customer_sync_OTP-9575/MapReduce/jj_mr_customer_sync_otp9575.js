@@ -20,18 +20,36 @@
 * @version 1.0 OTP-9575 : 30-October-2025 : Created the initial build by JJ0363
 *
 *********************************************************************************************************************************/
-define(['N/https', 'N/record', 'N/search', '../Library/jj_netsuite_shopify_integration_library.js'],
+define(['N/https', 'N/record', 'N/search', '../Library/jj_netsuite_shopify_integration_library.js','N/runtime'],
     /**
      * @param{https} https
      * @param{record} record
      * @param{search} search
      * @param{library} library
+     * @param{search} runtime
      */
-    (https, record, search, library) => {
+    (https, record, search, library, runtime) => {
 
         'use strict'
 
-        let customersFromShopify = library.customersFromShopify();
+        /**
+         * Retrieve the Shopify API key from script parameters
+         * @returns {string} - Shopify API key from the script parameters
+        */
+        const getShopifyApiKey = () => {
+            try {
+                let scriptObj = runtime.getCurrentScript();
+                return scriptObj.getParameter({
+                    name: 'custscript_jj_shopify_api_tkn_opt9575'
+                });
+            } catch (error) {
+                log.error("error in fetching shopify api key");
+                return '';
+            }
+        };
+
+        let shopfyApiToken = getShopifyApiKey();
+        let customersFromShopify = library.customersFromShopify(shopfyApiToken);
         let netSuiteCustomers = library.netSuiteCustomers();
 
         /**
@@ -148,8 +166,6 @@ define(['N/https', 'N/record', 'N/search', '../Library/jj_netsuite_shopify_integ
          */
         const getInputData = (inputContext) => {
             try {
-                // let shopifyCustomers = customersFromShopify();
-                // let netSuiteCustomersData = netSuiteCustomers();
                 let customerData = [];
                 customersFromShopify.forEach(shopifyCustomer => {
                     let existingCustomer = netSuiteCustomers.find(netsuiteCustomer => netsuiteCustomer.email === shopifyCustomer.email);

@@ -13,28 +13,17 @@ define(['N/https', 'N/record', 'N/search', 'N/runtime'],
         const SHOPIFY_STORE_DOMAIN = 'isf3d1-xe';
 
         /**
-         * Retrieve the Shopify API key from script parameters
-         * @returns {string} - Shopify API key from the script parameters
-        */
-        const getShopifyApiKey = () => {
-            const scriptObj = runtime.getCurrentScript();
-            return scriptObj.getParameter({
-                name: 'custscript_shopify_api_token'
-            });
-        };
-
-        /**
          * This function checks if the customer already exists in Shopify by matching the email.
          * @param {string} email - The email address of the customer to search for in Shopify.
          * @returns {number|NaN} - Shopify customer ID if found, null if not found.
         */
-        const getShopifyCustomerId = (email) => {
+        const getShopifyCustomerId = (email,shopifyApiKey) => {
             try {
                 let response = https.get({
                     url: `https://${SHOPIFY_STORE_DOMAIN}.myshopify.com/admin/api/2023-01/customers/search.json?email=${email}`,
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-Shopify-Access-Token': getShopifyApiKey()
+                        'X-Shopify-Access-Token': shopifyApiKey
                     }
                 });
                 let responseData = JSON.parse(response.body);
@@ -53,13 +42,13 @@ define(['N/https', 'N/record', 'N/search', 'N/runtime'],
          * Fetch customers from Shopify.
          * @returns {Array} - List of customers fetched from Shopify.
         */
-        const customersFromShopify = () => {
+        const customersFromShopify = (shopifyApiKey) => {
             try {
                 let response = https.get({
                     url: `https://${SHOPIFY_STORE_DOMAIN}.myshopify.com/admin/api/2023-01/customers.json`,
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-Shopify-Access-Token': getShopifyApiKey()
+                        'X-Shopify-Access-Token': shopifyApiKey
                     }
                 });
                 let shopifyCustomers = JSON.parse(response.body).customers || [];
