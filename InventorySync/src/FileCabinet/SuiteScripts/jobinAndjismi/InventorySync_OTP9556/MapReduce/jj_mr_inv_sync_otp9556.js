@@ -2,17 +2,49 @@
  * @NApiVersion 2.1
  * @NScriptType MapReduceScript
  */
-define(['N/https', 'N/search'],
+/**********************************************************************************************************************************
+* Training
+* 
+* ${OTP} : ${Onboard Training Program}
+*
+**********************************************************************************************************************************
+*
+* Author: Jobin & Jismi
+*
+* Date Created : 28-October-2025
+*
+* Description : This map reduce script is used to sync inventory from shopify to NetSuite
+*
+* REVISION HISTORY
+*
+* @version 1.0 OTP-9575 : 28-October-2025 : Created the initial build by JJ0363
+*
+*********************************************************************************************************************************/
+define(['N/https', 'N/search', '../Library/jj_ns_shopify_integration.js'],
     /**
  * @param{https} https
  * @param{search} search
+ * @param{library} library
  */
-    (https, search) => {
+    (https, search, library) => {
+
         'use strict';
 
-        const SHOPIFY_API_KEY = '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';
-        const SHOPIFY_STORE_DOMAIN = 'isf3d1-xe.myshopify.com';
-        const LOCATION_ID = 75069685947;
+        /**
+         * Retrieve the Shopify API key from script parameters
+         * @returns {string} - Shopify API key from the script parameters
+        */
+        const getShopifyApiKey = () => {
+            try {
+                let scriptObj = runtime.getCurrentScript();
+                return scriptObj.getParameter({
+                    name: 'custscript_jj_shopify_api_tkn_opt9556' // This is the parameter ID you set in the script record
+                });
+            } catch (error) {
+                log.error("error@getShopifyApiKey",error);
+                return '';
+            }
+        };
 
         /**
          * Defines the function that is executed at the beginning of the map/reduce process and generates the input data.
@@ -26,7 +58,6 @@ define(['N/https', 'N/search'],
          * @returns {Array|Object|Search|ObjectRef|File|Query} The input data to use in the map/reduce process
          * @since 2015.2
          */
-
         const getInputData = (inputContext) => {
             try {
                 let inventorySearch = search.create({
@@ -41,7 +72,6 @@ define(['N/https', 'N/search'],
                     ],
                     columns: ['internalid', 'itemid', 'quantityonhand', 'quantityavailable']
                 });
-
                 let data = [];
                 inventorySearch.run().each(result => {
                     data.push({
@@ -52,13 +82,11 @@ define(['N/https', 'N/search'],
                     });
                     return true;
                 });
-
                 log.audit('Input Data Loaded', `Total items fetched: ${data.length}`);
                 return data;
-
             } catch (error) {
-                log.error('Error in getInputData', error);
-                throw error;
+                log.error('error@getInputData', error);
+                return [];
             }
         }
 
@@ -78,42 +106,32 @@ define(['N/https', 'N/search'],
          * @param {string} mapContext.value - Value to be processed during the map stage
          * @since 2015.2
          */
-
         const map = (mapContext) => {
             try {
-                const item = JSON.parse(mapContext.value);
-                const sku = item.sku;
-                const qtyAvailable = item.quantityavailable;
-
-                const variantEndpoint = `https://${SHOPIFY_STORE_DOMAIN}/admin/api/2023-07/variants.json`;
-
-                let response = https.get({
-                    url: variantEndpoint,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Shopify-Access-Token': SHOPIFY_API_KEY
-                    }
-                });
-
-                let shopifyData = JSON.parse(response.body);
-                let shopifyVariants = shopifyData.variants || [];
-
+                let item = JSON.parse(mapContext.value);
+                let sku = item.sku;
+                let internalId = item.internalid;
+                let qtyAvailable = item.quantityavailable;
+                let shopifyApiKey = getShopifyApiKey();
+                let shopifyVariants = library.fetchVariantProductsFromShopify(shopifyApiKey);
+                let locationId = library.getLocationId();
                 shopifyVariants.forEach(variant => {
                     if (variant.sku === sku && variant.inventory_item_id) {
                         mapContext.write({
                             key: variant.id,
                             value: {
-                                location_id: LOCATION_ID,
+                                location_id: locationId,
                                 inventory_item_id: variant.inventory_item_id,
                                 available: qtyAvailable,
-                                sku: sku
+                                sku: sku,
+                                internalid: internalId,
+                                variantId: variant.id
                             }
                         });
                     }
                 });
-
             } catch (error) {
-                log.error('Error in map stage', error);
+                log.error('error@map', error);
             }
         }
 
@@ -134,42 +152,13 @@ define(['N/https', 'N/search'],
          */
         const reduce = (reduceContext) => {
             try {
-                const updates = reduceContext.values.map(v => JSON.parse(v));
-                const inventoryEndpoint = `https://${SHOPIFY_STORE_DOMAIN}/admin/api/2025-10/inventory_levels/set.json`;
-
-                updates.forEach(updateObj => {
-                    try {
-                        let resp = https.post({
-                            url: inventoryEndpoint,
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-Shopify-Access-Token': SHOPIFY_API_KEY
-                            },
-                            body: JSON.stringify(updateObj)
-                        });
-
-                        if (resp.code >= 400) {
-                            log.error('Shopify API Error', {
-                                sku: updateObj.sku,
-                                response: resp.body
-                            });
-                        } else {
-                            log.audit('Inventory Updated Successfully', {
-                                sku: updateObj.sku,
-                                available: updateObj.available
-                            });
-                        }
-
-                    } catch (innerErr) {
-                        log.error('Error Updating Shopify Inventory', innerErr);
-                    }
-                });
-
+                let updates = reduceContext.values.map(reduce => JSON.parse(reduce));
+                let shopifyApiKey = getShopifyApiKey();
+                library.updateInventory(updates,shopifyApiKey);
             } catch (error) {
-                log.error('Error in reduce stage', error);
+                log.error('error@reduce', error);
             }
         }
-
 
         /**
          * Defines the function that is executed when the summarize entry point is triggered. This entry point is triggered
@@ -192,9 +181,6 @@ define(['N/https', 'N/search'],
          */
         const summarize = (summaryContext) => {
             try {
-                // log.audit('Summary Started', '--- Map/Reduce Execution Summary ---');
-                // log.error("summary context: ",summaryContext.inputSummary)
-
                 log.error("error in input summary",summaryContext.inputSummary.error);
                 log.error("error in map",summaryContext.mapSummary.error);
                 log.error("error in reduce",summaryContext.reduceSummary.error);
@@ -206,9 +192,8 @@ define(['N/https', 'N/search'],
                     concurrency: summaryContext.concurrency,
                     yields: summaryContext.yields
                 });
-
             } catch (error) {
-                log.error('Error in summarize stage', error);
+                log.error('error@summarize', error);
             }
         }
 
