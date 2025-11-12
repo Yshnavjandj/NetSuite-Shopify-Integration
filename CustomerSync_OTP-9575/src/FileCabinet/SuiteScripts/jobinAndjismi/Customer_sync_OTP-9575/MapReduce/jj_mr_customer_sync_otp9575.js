@@ -33,6 +33,32 @@ define(['N/https', 'N/record', 'N/search', '../Library/jj_netsuite_shopify_integ
         'use strict'
 
         /**
+         * Log the attempt to sync an order.
+         * @param {string} shopifyCustomerId - The Shopify order ID.
+         * @param {string} netsuiteCustomerId - The NetSuite order ID.
+         * @param {string} status - The status of the sync attempt (Success/Failure).
+         * @param {string} failureMessage - The failure message regarding customer sync.
+         */
+        const logSyncAttempt = (shopifyCustomerId, netsuiteCustomerId, status, failureMessage) => {
+            try {
+                let rec = record.create({
+                    type: 'customrecord_jj_failure_reason_otp9575',
+                    isDynamic: true
+                });
+                rec.setValue({ fieldId: 'custrecord_jj_shopify_customer_id', value: String(shopifyCustomerId) });
+                rec.setValue({ fieldId: 'custrecord_jj_ns_customer_id', value: netsuiteCustomerId || '' });
+                rec.setValue({ fieldId: 'custrecord_jj_sync_status', value: status || '' });
+                rec.setValue({ fieldId: 'custrecord_jj_customer_failure_reason', value: failureMessage || ''});
+                let id = rec.save();
+                log.audit('Sync status logged', { id, shopifyCustomerId, status, failureMessage });
+            } catch (e) {
+                log.error('Error logging sync record', e);
+                log.error('error@logSyncAttempt', e.message);
+            }
+        };
+
+
+        /**
          * Retrieve the Shopify API key from script parameters
          * @returns {string} - Shopify API key from the script parameters
         */
@@ -47,10 +73,6 @@ define(['N/https', 'N/record', 'N/search', '../Library/jj_netsuite_shopify_integ
                 return '';
             }
         };
-
-        let shopfyApiToken = getShopifyApiKey();
-        let customersFromShopify = library.customersFromShopify(shopfyApiToken);
-        let netSuiteCustomers = library.netSuiteCustomers();
 
         /**
          * Find an existing customer in NetSuite by email.
@@ -71,7 +93,7 @@ define(['N/https', 'N/record', 'N/search', '../Library/jj_netsuite_shopify_integ
                 }
                 return {};
             } catch (error) {
-                log.error("Error in finding existing customer in NetSuite", error);
+                log.error("error@findExistingCustomerInNetSuite", error);
                 return {}; 
             }
         }
@@ -88,6 +110,10 @@ define(['N/https', 'N/record', 'N/search', '../Library/jj_netsuite_shopify_integ
                     id: existingCustomer.internalId
                 });
                 let isUpdated = false;
+                let address;
+                if(customerData.addresses.length > 0) {
+                    address = customerData.addresses[0];
+                }
                 if (customerRecord.getValue('email') !== customerData.email) {
                     customerRecord.setValue('email', customerData.email || '');
                     isUpdated = true;
@@ -96,32 +122,31 @@ define(['N/https', 'N/record', 'N/search', '../Library/jj_netsuite_shopify_integ
                     customerRecord.setValue('phone', customerData.phone  || '');
                     isUpdated = true;
                 }
-                if (customerRecord.getValue('address') !== customerData.address) {
-                    customerRecord.setValue('address', customerData.address  || '');
-                    isUpdated = true;
-                }
-                if (customerRecord.getValue('city') !== customerData.city) {
-                    customerRecord.setValue('city', customerData.city  || '');
+                if (customerRecord.getValue('city') !== address.city) {
+                    customerRecord.setValue('city', address.city  || '');
                     isUpdated = true;
                 }
                 if (customerRecord.getValue('state') !== customerData.state) {
                     customerRecord.setValue('state', customerData.state  || '');
                     isUpdated = true;
                 }
-                if (customerRecord.getValue('zipcode') !== customerData.zip) {
-                    customerRecord.setValue('zipcode', customerData.zip  || '');
+                if (customerRecord.getValue('zipcode') !== address.zip) {
+                    customerRecord.setValue('zipcode', address.zip  || '');
                     isUpdated = true;
                 }
-                if (customerRecord.getValue('country') !== customerData.country) {
-                    customerRecord.setValue('country', customerData.country);
+                if (customerRecord.getValue('country') !== address.country) {
+                    customerRecord.setValue('country', address.country);
                     isUpdated = true;
                 }
                 if (isUpdated) {
                     let updatedCustomer = customerRecord.save();
                     log.debug('Updated Customer in NetSuite', 'Customer ID: ' + updatedCustomer);
+                    return updatedCustomer;
                 }
+                return '';
             } catch (e) {
                 log.error('Error in Updating Customer', 'Error updating customer: ' + e.message);
+                return '';
             }
         }
 
@@ -147,8 +172,10 @@ define(['N/https', 'N/record', 'N/search', '../Library/jj_netsuite_shopify_integ
                 newCustomer.setValue('subsidiary', 1);
                 let newCustomerId = newCustomer.save();
                 log.debug('Created Customer in NetSuite', 'Customer ID: ' + newCustomerId);
+                return newCustomerId;
             } catch (e) {
                 log.error('Error in Creating Customer' ,e);
+                return '';
             }
         }
 
@@ -166,23 +193,9 @@ define(['N/https', 'N/record', 'N/search', '../Library/jj_netsuite_shopify_integ
          */
         const getInputData = (inputContext) => {
             try {
-                let customerData = [];
-                customersFromShopify.forEach(shopifyCustomer => {
-                    let existingCustomer = netSuiteCustomers.find(netsuiteCustomer => netsuiteCustomer.email === shopifyCustomer.email);
-                    if (existingCustomer) {
-                        customerData.push({
-                            action: 'update',
-                            customerId: existingCustomer.internalId,
-                            shopifyCustomerData: shopifyCustomer
-                        });
-                    } else {
-                        customerData.push({
-                            action: 'create',
-                            shopifyCustomerData: shopifyCustomer
-                        });
-                    }
-                });
-                return customerData;
+                let shopfyApiToken = getShopifyApiKey();
+                let customersFromShopify = library.customersFromShopify(shopfyApiToken);
+                return customersFromShopify;
             } catch (error) {
                 log.error("error in getInputData()", error)
                 return [];
@@ -207,15 +220,27 @@ define(['N/https', 'N/record', 'N/search', '../Library/jj_netsuite_shopify_integ
          */
         const map = (mapContext) => {
             try {
+                log.debug("mapContext: ",mapContext);
                 let customerData = JSON.parse(mapContext.value);
-                let existingCustomer = findExistingCustomerInNetSuite(customerData.shopifyCustomerData.email);
-                if (existingCustomer) {
-                    updateCustomerInNetSuite(existingCustomer, customerData.shopifyCustomerData);
-                } else {
-                    createCustomerInNetSuite(customerData.shopifyCustomerData);
+                log.debug("customer data",customerData);
+                if(customerData.email) {
+                    let existingCustomer = findExistingCustomerInNetSuite(customerData.email);
+                    log.debug("existing customer: ",existingCustomer);
+                    let netSuiteCustomerId;
+                    if (existingCustomer && Object.keys(existingCustomer).length > 0) {
+                        // netSuiteCustomerId = existingCustomer.internalId;
+                        netSuiteCustomerId = updateCustomerInNetSuite(existingCustomer, customerData);
+                    } else {
+                        netSuiteCustomerId = createCustomerInNetSuite(customerData);
+                    }
+                    logSyncAttempt(customerData.id,netSuiteCustomerId,'Sucess','');
+                }else {
+                    logSyncAttempt(customerData.id,'','Failed','email is not provided');
                 }
             } catch (e) {
                 log.error('Error in Mapping', 'Error processing customer ID: ' + customerData.internalId + ', Error: ' + e.message);
+                let customerData = JSON.parse(mapContext.value);
+                logSyncAttempt(customerData.id,'','Failed',e.message);
             }
         }
 
