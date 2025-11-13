@@ -39,7 +39,6 @@ define(['N/https', 'N/record', 'N/search', 'N/runtime', '../Library/jj_ns_shopif
                     ],
                     columns: ['internalid']
                 }).run().getRange({ start: 0, end: 1 });
-
                 return result.length > 0;
             } catch (e) {
                 log.error('Error checking sync status', e);
@@ -118,16 +117,20 @@ define(['N/https', 'N/record', 'N/search', 'N/runtime', '../Library/jj_ns_shopif
          */
         const getItem = (itemId) => {
             try {
-                let itemSearch = search.create({
-                    type: search.Type.INVENTORY_ITEM,
-                    filters: [['isinactive', 'is', 'F'], 'AND', ['itemid','is',itemId]],
-                    columns: ['internalid']
-                });
-                let item = itemSearch.run().getRange({start: 0, end: 1});
-                return item.length > 0 ? item[0].getValue('internalid') : null;
+                log.debug("item id: ",itemId);
+                if(itemId) {
+                    let itemSearch = search.create({
+                        type: search.Type.INVENTORY_ITEM,
+                        filters: [['isinactive', 'is', 'F'], 'AND', ['itemid','is',itemId]],
+                        columns: ['internalid']
+                    });
+                    let item = itemSearch.run().getRange({start: 0, end: 1});
+                    return item.length > 0 ? item[0].getValue('internalid') : null;
+                }
+                return null;
             } catch (error) {
                 log.error("error in getItem()", error);
-                return null; // Return null in case of error
+                return null;
             }
         };
 
@@ -139,14 +142,15 @@ define(['N/https', 'N/record', 'N/search', 'N/runtime', '../Library/jj_ns_shopif
         const createItem = (itemShopify) => {
             try {
                 let item = record.create({ type: record.Type.INVENTORY_ITEM, isDynamic: true });
-                item.setValue({ fieldId: 'itemid', value: itemShopify.sku });
+                if(itemShopify.sku) item.setValue({ fieldId: 'itemid', value: itemShopify.sku });
+                else return null;
                 item.setValue({ fieldId: 'baseprice', value: itemShopify.price });
                 item.setValue({ fieldId: 'taxschedule', value: 1 });
                 item.setValue({ fieldId: 'subsidiary', value: 1 });
                 return item.save();
             } catch (error) {
                 log.error("error in createItem()", error);
-                return null; // Return null in case of error
+                return null;
             }
         };
 
@@ -166,12 +170,10 @@ define(['N/https', 'N/record', 'N/search', 'N/runtime', '../Library/jj_ns_shopif
                             log.error('Order already synced — skipping', order.id);
                             return;
                         }
-
                         let customer = getCustomer(order.customer);
                         if (!customer) {
                             customer = createCustomer(order.customer);
                         }
-
                         let lineItems = order.line_items;
                         let items = [];
                         log.audit("items", lineItems);
@@ -181,7 +183,6 @@ define(['N/https', 'N/record', 'N/search', 'N/runtime', '../Library/jj_ns_shopif
                                 items.push({ id: itemId, quantity: item.quantity });
                             }
                         });
-
                         if (customer && items.length > 0) {
                             let salesOrder = record.create({ type: record.Type.SALES_ORDER, isDynamic: true });
                             salesOrder.setValue({ fieldId: 'entity', value: customer });
@@ -198,7 +199,6 @@ define(['N/https', 'N/record', 'N/search', 'N/runtime', '../Library/jj_ns_shopif
                             log.error("customer or item is empty for order", order.id);
                             logSyncAttempt(order.id, null, 'Failure');
                         }
-
                     } catch (err) {
                         log.error("Error processing order", { orderId: order.id, error: err });
                         logSyncAttempt(order.id, null, 'Failure');
