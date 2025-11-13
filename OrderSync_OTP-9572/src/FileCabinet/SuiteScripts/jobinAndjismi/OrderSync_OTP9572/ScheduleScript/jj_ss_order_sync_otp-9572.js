@@ -2,13 +2,32 @@
  * @NApiVersion 2.1
  * @NScriptType ScheduledScript
  */
-define(['N/https', 'N/record', 'N/search'],
-    (https, record, search) => {
+define(['N/https', 'N/record', 'N/search', 'N/runtime', '../Library/jj_ns_shopify_integration.js'],
+    (https, record, search, runtime, library) => {
+        
         'use strict';
 
-        const SHOPIFY_API_KEY = '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';
-        const SHOPIFY_STORE_DOMAIN = 'isf3d1-xe';
+        /**
+         * Retrieve the Shopify API key from script parameters.
+         * @returns {string} - Shopify API key from the script parameters or an empty string if an error occurs.
+         */
+        const getShopifyApiKey = () => {
+            try {
+                let scriptObj = runtime.getCurrentScript();
+                return scriptObj.getParameter({
+                    name: 'custscript_jj_shopify_api_tkn' // This is the parameter ID you set in the script record
+                });
+            } catch (error) {
+                log.error("error in fetching shopify api key");
+                return '';
+            }
+        };
 
+        /**
+         * Check if the order has already been synced with NetSuite.
+         * @param {string} shopifyOrderId - The Shopify order ID to check.
+         * @returns {boolean} - Returns true if the order is already synced, false otherwise.
+         */
         const isOrderAlreadySynced = (shopifyOrderId) => {
             try {
                 let result = search.create({
@@ -28,6 +47,12 @@ define(['N/https', 'N/record', 'N/search'],
             }
         };
 
+        /**
+         * Log the attempt to sync an order.
+         * @param {string} shopifyOrderId - The Shopify order ID.
+         * @param {string} netsuiteOrderId - The NetSuite order ID.
+         * @param {string} status - The status of the sync attempt (Success/Failure).
+         */
         const logSyncAttempt = (shopifyOrderId, netsuiteOrderId, status) => {
             try {
                 let rec = record.create({
@@ -46,6 +71,11 @@ define(['N/https', 'N/record', 'N/search'],
             }
         };
 
+        /**
+         * Retrieve a customer based on the email address.
+         * @param {Object} customer - The customer object containing email.
+         * @returns {number|null} - Returns the internal ID of the customer, or null if not found.
+         */
         const getCustomer = (customer) => {
             try {
                 let customerSearch = search.create({
@@ -57,9 +87,15 @@ define(['N/https', 'N/record', 'N/search'],
                 return customerArray.length > 0 ? customerArray[0].getValue('internalid') : null;
             } catch (error) {
                 log.error("error in getcustomer()", error);
+                return null; // Return null in case of error
             }
         };
 
+        /**
+         * Create a customer in NetSuite.
+         * @param {Object} customer - The customer object containing customer data.
+         * @returns {number|null} - Returns the internal ID of the created customer or null if creation fails.
+         */
         const createCustomer = (customer) => {
             try {
                 let rec = record.create({ type: record.Type.CUSTOMER, isDynamic: true });
@@ -71,9 +107,15 @@ define(['N/https', 'N/record', 'N/search'],
                 return rec.save();
             } catch (error) {
                 log.error("error in createcustomer()", error);
+                return null; // Return null in case of error
             }
         };
 
+        /**
+         * Retrieve an item based on its SKU.
+         * @param {string} itemId - The SKU of the item to retrieve.
+         * @returns {number|null} - Returns the internal ID of the item, or null if the item is not found.
+         */
         const getItem = (itemId) => {
             try {
                 let itemSearch = search.create({
@@ -85,9 +127,15 @@ define(['N/https', 'N/record', 'N/search'],
                 return item.length > 0 ? item[0].getValue('internalid') : null;
             } catch (error) {
                 log.error("error in getItem()", error);
+                return null; // Return null in case of error
             }
         };
 
+        /**
+         * Create a new inventory item in NetSuite based on Shopify item data.
+         * @param {Object} itemShopify - The Shopify item object containing item details.
+         * @returns {number|null} - Returns the internal ID of the created item or null if creation fails.
+         */
         const createItem = (itemShopify) => {
             try {
                 let item = record.create({ type: record.Type.INVENTORY_ITEM, isDynamic: true });
@@ -98,20 +146,18 @@ define(['N/https', 'N/record', 'N/search'],
                 return item.save();
             } catch (error) {
                 log.error("error in createItem()", error);
+                return null; // Return null in case of error
             }
         };
 
+        /**
+         * Fetch and process orders from Shopify.
+         * @returns {void} - Processes orders without returning any value.
+         */
         const processOrders = () => {
             try {
-                let orderFetchUrl = `https://${SHOPIFY_STORE_DOMAIN}.myshopify.com/admin/api/2025-10/orders.json?status=any`;
-                let orderFetchRes = https.get({
-                    url: orderFetchUrl,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Shopify-Access-Token': SHOPIFY_API_KEY
-                    }
-                });
-                let orders = JSON.parse(orderFetchRes.body).orders || [];
+                let shopifyApiKey = getShopifyApiKey();
+                let orders = library.fetchOrdersFromShopify(shopifyApiKey)
                 log.audit("orders from shopify", orders);
 
                 orders.forEach((order) => {
@@ -164,6 +210,11 @@ define(['N/https', 'N/record', 'N/search'],
             }
         };
 
+        /**
+         * The execute function to trigger the order processing.
+         * @param {Object} scriptContext - The script context object passed by the scheduler.
+         * @returns {void} - Calls the processOrders function without returning any value.
+         */
         const execute = (scriptContext) => {
             try {
                 processOrders();
