@@ -21,17 +21,15 @@
 * @version 1.0 OTP-9653 : 03-November-2025 : Created the initial build by JJ0363
 *
 *************************************************************************************************************************************/
-define(['N/https', 'N/record', 'N/search'],
+define(['N/https', 'N/record', 'N/search', '../Library/jj_ns_shopify_integration.js'],
     /**
      * @param{https} https
      * @param{record} record
      * @param{search} search
      */
-    (https, record, search) => {
+    (https, record, search, library) => {
 
         'use strict'
-
-        const SHOPIFY_STORE_DOMAIN = 'isf3d1-xe';
 
         /**
          * Retrieve the Shopify API key from script parameters
@@ -48,8 +46,6 @@ define(['N/https', 'N/record', 'N/search'],
                 return '';
             }
         };
-
-        let shopifyApiKey = getShopifyApiKey();
 
         /**
          * This function gets the corresponding Shopify Order ID from a custom field.
@@ -130,7 +126,8 @@ define(['N/https', 'N/record', 'N/search'],
         const fetchMatchingShopifyItems = (currentRecord, returningItems) => {
             try {
                 let shopifyOrderId = getShopifyOrderId(currentRecord);
-                let shopifyOrderItems = getShopifyItems(shopifyOrderId);
+                let shopifyApiKey = getShopifyApiKey();
+                let shopifyOrderItems = library.getShopifyItems(shopifyApiKey,shopifyOrderId);
                 let matchedItems = [];
                 returningItems.forEach(netsuiteItem => {
                     let match = shopifyOrderItems.find(shopifyItem => shopifyItem.sku === netsuiteItem.sku && shopifyItem.quantity >= netsuiteItem.quantity);
@@ -150,81 +147,6 @@ define(['N/https', 'N/record', 'N/search'],
         }
 
         /**
-         * This function fetches all line items of a given Shopify order.
-         * @param {string} shopifyOrderId - The Shopify Order ID to fetch the line items.
-         * @returns {Array} - An array of line items.
-         */
-        const getShopifyItems = (shopifyOrderId) => {
-            try {
-                let url = `https://${SHOPIFY_STORE_DOMAIN}.myshopify.com/admin/api/2023-01/orders/${shopifyOrderId}.json`;
-                let response = https.get({
-                    url: url,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Shopify-Access-Token': shopifyApiKey
-                    }
-                });
-                let orderData = JSON.parse(response.body);
-                let lineItems = orderData.order.line_items;
-                lineItems.forEach(item => {
-                    log.debug('Line Item', `ID: ${item.id}, Title: ${item.title}, Quantity: ${item.quantity}`);
-                });
-                return lineItems;
-            } catch (error) {
-                log.error("Error fetching Shopify items", error);
-                return [];
-            }
-        }
-
-        /**
-         * This function fetches fulfillment item IDs from Shopify for a given order.
-         * @param {string} shopifyOrderId - The Shopify Order ID to fetch fulfillment item IDs.
-         * @returns {Object} - The Shopify fulfillment data or an empty object if an error occurs.
-         */
-        const getFulfillmentItemIds = (shopifyOrderId) => {
-            try {
-                let url = `https://${SHOPIFY_STORE_DOMAIN}.myshopify.com/admin/api/2025-10/graphql.json`;
-                let requestData = `query returnableFulfillmentsQuery {
-                    returnableFulfillments(orderId: "gid://shopify/Order/${shopifyOrderId}", first: 10) {
-                        edges {
-                            node {
-                                id
-                                fulfillment {
-                                    id
-                                }
-                                returnableFulfillmentLineItems(first: 10) {
-                                    edges {
-                                        node {
-                                            fulfillmentLineItem {
-                                                id
-                                            }
-                                            quantity
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }`;
-                let fulFillmentRes = https.post({
-                    url: url,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Shopify-Access-Token': shopifyApiKey
-                    },
-                    body: JSON.stringify({ query: requestData })
-                });
-                log.debug("raw response body:", fulFillmentRes.body);
-                let responseData = JSON.parse(fulFillmentRes.body);
-                log.debug("parsed response:", responseData);
-                return responseData;
-            } catch (error) {
-                log.error("error in fulfillment item ids:", error);
-                return {};
-            }
-        }
-
-        /**
          * This function creates a return in Shopify by sending the return line items.
          * @param {Object} returnItems - The object containing the matched items and the Shopify Order ID.
          */
@@ -232,7 +154,8 @@ define(['N/https', 'N/record', 'N/search'],
             try {
                 let shopifyOrderId = returnItems.shopifyOrderId;
                 log.debug("shopify order id: ", shopifyOrderId);
-                let fulFillmentLines = getFulfillmentItemIds(shopifyOrderId);
+                let shopifyApiKey = getShopifyApiKey();
+                let fulFillmentLines = library.getFulfillmentItemIds(shopifyApiKey,shopifyOrderId);
                 let ids = [];
                 let edges = fulFillmentLines.data.returnableFulfillments.edges;
                 for (let i = 0; i < edges.length; i++) {
@@ -276,19 +199,7 @@ define(['N/https', 'N/record', 'N/search'],
                         }
                     }
                 }`;
-                let createReturnRes = https.post({
-                    url: `https://${SHOPIFY_STORE_DOMAIN}.myshopify.com/admin/api/2025-10/graphql.json`,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Shopify-Access-Token': shopifyApiKey
-                    },
-                    body: JSON.stringify({ query: requestData })
-                });
-                log.debug("response create return: ", createReturnRes);
-                if (createReturnRes.code === 200) {
-                    let responseData = JSON.parse(createReturnRes.body);
-                    log.debug("Parsed Response create return: ", responseData);
-                }
+                library.createReturnsInShopifyRequest(shopifyApiKey,requestData)
             } catch (error) {
                 log.error("error in returning items: ", error);
             }
