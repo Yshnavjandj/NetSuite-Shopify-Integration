@@ -9,7 +9,11 @@ define(['N/https', 'N/record', 'N/search'],
  */
     (https, record, search) => {
 
+        'use strict';
+
         const SHOPIFY_STORE_DOMAIN = 'isf3d1-xe';
+        const SHIP_STATUS = 'C';
+        const FAILURE_CODE = 400;
 
         /**
          * Send the fulfillment request to Shopify for the corresponding order.
@@ -72,7 +76,7 @@ define(['N/https', 'N/record', 'N/search'],
                     body: JSON.stringify(requestData)
                 });
                 log.debug("response: ",response);
-                if(response.code >= 400) {
+                if(response.code >= FAILURE_CODE) {
                     record.submitFields({
                         type: record.Type.ITEM_FULFILLMENT,
                         id: recordId,
@@ -120,7 +124,7 @@ define(['N/https', 'N/record', 'N/search'],
             }
         }
 
-        const shipStatus = () => 'C';
+        const shipStatus = () => SHIP_STATUS;
 
         return {fetchFulFillmentDetails, fulfillShopifyOrder, getLineItemIds, shipStatus}
 
