@@ -20,14 +20,15 @@
 * @version 1.0 OTP-9650 : 28-October-2025 : Created the initial build by JJ0363
 *
 *********************************************************************************************************************************/
-define(['N/https', 'N/record', 'N/search', '../Library/jj_ns_shopify_integration.js'],
+define(['N/https', 'N/record', 'N/search', '../Library/jj_ns_shopify_integration.js', 'N/runtime'],
  /**
  * @param{https} https
  * @param{record} record
  * @param{search} search
  * @param{library} library
+ * @param{runtime} runtime
  */
-    (https, record, search, library) => {
+    (https, record, search, library, runtime) => {
 
         'use strict';
 
@@ -72,57 +73,44 @@ define(['N/https', 'N/record', 'N/search', '../Library/jj_ns_shopify_integration
             }
         }
 
-        /**
-         * Defines the function definition that is executed after record is submitted.
-         * @param {Object} scriptContext
-         * @param {Record} scriptContext.newRecord - New record
-         * @param {Record} scriptContext.oldRecord - Old record
-         * @param {string} scriptContext.type - Trigger type; use values from the context.UserEventType enum
-         * @since 2015.2
+        /**  Processes a NetSuite Item Fulfillment record and synchronizes fulfillment details with Shopify.
+        * @param {Object} scriptContext
+        * @param {Record} scriptContext.newRecord - New record
+        * @returns {void} This function does not return a value; it logs errors/debug info and triggers Shopify fulfillment.
         */
-        const afterSubmit = (scriptContext) => {
+        const processFulFillment = (scriptContext) => {
             try {
+                let shopifyApiKey = getShopifyApiKey();
                 let itemFulfillmentRecord = scriptContext.newRecord;
-                let ifRecord = search.lookupFields({
-                    type: search.Type.ITEM_FULFILLMENT,
-                    id: itemFulfillmentRecord.id,
-                    columns: ['status']
-                });
-                let ifStatus = ifRecord.status[0].value;
-                if(scriptContext.type === scriptContext.UserEventType.SHIP || (scriptContext.type === scriptContext.UserEventType.CREATE && ifStatus === 'shipped') || (scriptContext.type === scriptContext.UserEventType.EDIT && ifStatus === 'shipped')) {
-                    let shopifyApiKey = getShopifyApiKey();
-                    log.error("IF record sublist: ",itemFulfillmentRecord.sublists);
-                    let netsuiteOrderId = itemFulfillmentRecord.getValue('createdfrom');
-                    log.error("created from: ",netsuiteOrderId);
-                    let lineItemsIf = [];
-                    let lineCount = itemFulfillmentRecord.getLineCount({ sublistId: 'item' });
-                    for (let i = 0; i < lineCount; i++) {
-                        let itemInternalid = itemFulfillmentRecord.getSublistValue({
-                            sublistId: 'item',
-                            fieldId: 'item',
-                            line: i
-                        });
-                        let itemIdSearch = search.lookupFields({
-                            type: search.Type.INVENTORY_ITEM,
-                            id: itemInternalid,
-                            columns: ['itemid']
-                        });
-                        let itemId = itemIdSearch.itemid;
-                        let quantity = itemFulfillmentRecord.getSublistValue({
-                            sublistId: 'item',
-                            fieldId: 'quantity',
-                            line: i
-                        });
-                        lineItemsIf.push({
-                            sku: itemId,
-                            quantity: quantity,
-                            internalid: itemInternalid
-                        });
-                        log.debug('Line ' + i, 'Item ID: ' + itemId + ', Quantity: ' + quantity);
-                    }
-                    log.debug("items array: ",lineItemsIf);
-                    netsuiteOrderId = String(netsuiteOrderId);
-                    let shopifyOrderId = getShopifyOrderId(netsuiteOrderId);
+                let netsuiteOrderId = itemFulfillmentRecord.getValue('createdfrom');
+                let lineItemsIf = [];
+                let lineCount = itemFulfillmentRecord.getLineCount({ sublistId: 'item' });
+                for (let i = 0; i < lineCount; i++) {
+                    let itemInternalid = itemFulfillmentRecord.getSublistValue({
+                        sublistId: 'item',
+                        fieldId: 'item',
+                        line: i
+                    });
+                    let itemIdSearch = search.lookupFields({
+                        type: search.Type.INVENTORY_ITEM,
+                        id: itemInternalid,
+                        columns: ['itemid']
+                    });
+                    let itemId = itemIdSearch.itemid;
+                    let quantity = itemFulfillmentRecord.getSublistValue({
+                        sublistId: 'item',
+                        fieldId: 'quantity',
+                        line: i
+                    });
+                    lineItemsIf.push({
+                        sku: itemId,
+                        quantity: quantity,
+                        internalid: itemInternalid
+                    });
+                }
+                netsuiteOrderId = String(netsuiteOrderId);
+                let shopifyOrderId = getShopifyOrderId(netsuiteOrderId);
+                if(shopifyOrderId) {
                     let shopifyOrderItems = library.getLineItemIds(shopifyOrderId,shopifyApiKey);
                     let netsuiteSkuMap = new Map(lineItemsIf.map(item => [item.sku.toLowerCase(), item]));
                     let commonItems = shopifyOrderItems.filter(shopItem => netsuiteSkuMap.has(shopItem.sku.toLowerCase())).map(shopItem => {
@@ -133,25 +121,40 @@ define(['N/https', 'N/record', 'N/search', '../Library/jj_ns_shopify_integration
                             internalid: netItem.internalid
                         };
                     });
-                    log.debug("common items: ",commonItems);
                     let fulFillRes = library.fetchFulFillmentDetails(shopifyOrderId,shopifyApiKey);
-                    log.debug("fulfill res: ",fulFillRes);
-
                     let mappedArray = commonItems.map(item => {
                         let match = fulFillRes.line_items.find(ref => ref.line_item_id === item.id);
                         return match ? { id: match.id, quantity: item.quantity } : null; }).filter(Boolean);
 
-                    log.error("mapped arr",mappedArray);
-                    log.error("fulfillment status: ",ifStatus);
-                    if (ifStatus !== 'shipped') {
-                        log.debug('Not Shipped', `Order ID ${netsuiteOrderId} is not marked as shipped. Skipping Shopify fulfillment.`);
-                        return;
+                    library.fulfillShopifyOrder(shopifyOrderId,mappedArray,shopifyApiKey,itemFulfillmentRecord.id);
+                } else {
+                    log.debug('Shopify Order ID Missing', `No Shopify Order ID found for NetSuite Order ID: ${netsuiteOrderId}`);
+                }
+            } catch (error) {
+                log.error("error in fulfillment process: ",error);
+            }
+        }
+
+        /**
+         * Defines the function definition that is executed after record is submitted.
+         * @param {Object} scriptContext
+         * @param {Record} scriptContext.newRecord - New record
+         * @param {Record} scriptContext.oldRecord - Old record
+         * @param {string} scriptContext.type - Trigger type; use values from the context.UserEventType enum
+         * @since 2015.2
+        */
+        const afterSubmit = (scriptContext) => {
+            try {
+                const SHIP_STATUS = library.shipStatus();
+                let createContext = scriptContext.UserEventType.CREATE && scriptContext.newRecord.getValue('shipstatus') === SHIP_STATUS;
+                let shipContext = scriptContext.type === scriptContext.UserEventType.SHIP;
+                if(scriptContext.type === scriptContext.UserEventType.EDIT) {
+                    let editContext = scriptContext.oldRecord.getValue('shipstatus') !== SHIP_STATUS && scriptContext.newRecord.getValue('shipstatus') === SHIP_STATUS;
+                    if(editContext) {
+                        processFulFillment(scriptContext);
                     }
-                    if (shopifyOrderId) {
-                        library.fulfillShopifyOrder(shopifyOrderId,mappedArray,shopifyApiKey,itemFulfillmentRecord.id);
-                    } else {
-                        log.error('Shopify Order ID Missing', `No Shopify Order ID found for NetSuite Order ID: ${netsuiteOrderId}`);
-                    }
+                }else if(createContext || shipContext) {
+                    processFulFillment(scriptContext);
                 }
             } catch (error) {
                 log.error('Error in afterSubmit', `Error occurred while processing Item Fulfillment: ${error.message}`);

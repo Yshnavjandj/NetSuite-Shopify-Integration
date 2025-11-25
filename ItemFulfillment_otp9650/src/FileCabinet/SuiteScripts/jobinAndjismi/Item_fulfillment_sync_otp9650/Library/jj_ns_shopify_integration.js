@@ -120,6 +120,8 @@ define(['N/https', 'N/record', 'N/search'],
             }
         }
 
-        return {fetchFulFillmentDetails, fulfillShopifyOrder, getLineItemIds}
+        const shipStatus = () => 'C';
+
+        return {fetchFulFillmentDetails, fulfillShopifyOrder, getLineItemIds, shipStatus}
 
     });
